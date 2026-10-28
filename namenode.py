@@ -32,6 +32,8 @@ if bool(auth_username) != bool(auth_password):
 if auth_username and auth_password:
     @app.before_request
     def require_authentication():
+        if request.path == "/" and request.method == "GET":
+            return None
         credentials = request.authorization
         if credentials and credentials.username is not None and credentials.password is not None:
             username_ok = hmac.compare_digest(credentials.username.encode("utf-8"), auth_username.encode("utf-8"))
@@ -157,8 +159,46 @@ def status():
             for k, v in files.items()])
 
 PAGE = open(os.path.join(os.path.dirname(__file__), "dashboard.html")).read()
+LANDING_PAGE = """<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark light">
+<title>VaultGrid — Encrypted, replicated, self-healing storage</title>
+<style>
+:root{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;color-scheme:dark;--bg:#0b1115;--card:#121b21;--fg:#e8f0f1;--muted:#91a4aa;--line:#26363d;--accent:#69e0c0}
+*{box-sizing:border-box}body{margin:0;min-height:100vh;background:radial-gradient(ellipse at 75% 0,rgba(72,187,158,.15),transparent 42%),var(--bg);color:var(--fg);display:grid;place-items:center;padding:24px}
+main{width:min(720px,100%);border:1px solid var(--line);border-radius:24px;background:linear-gradient(145deg,#152129,var(--card));padding:clamp(26px,7vw,58px);box-shadow:0 24px 80px #0005}
+.brand{display:flex;align-items:center;gap:12px;color:var(--accent);font-weight:750;letter-spacing:-.04em;font-size:17px}
+.mark{width:42px;height:42px;border-radius:14px;background:linear-gradient(145deg,var(--accent),#3b9cbb);display:grid;place-items:center;color:#0c1a19}
+.mark svg{width:25px;height:25px}h1{font-size:clamp(34px,8vw,56px);line-height:1.04;letter-spacing:-.055em;margin:36px 0 16px}
+.tagline{color:var(--accent);font-size:clamp(16px,3vw,20px);font-weight:600}.description{max-width:570px;color:var(--muted);font-size:15px;line-height:1.75;margin:16px 0 28px}
+.features{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:32px}.feature{border:1px solid var(--line);border-radius:999px;padding:7px 11px;color:var(--muted);font-size:12px}
+.actions{display:flex;align-items:center;gap:14px;flex-wrap:wrap}.button{display:inline-flex;align-items:center;justify-content:center;min-height:46px;padding:0 18px;border-radius:11px;background:var(--accent);color:#08211c;text-decoration:none;font-weight:700}
+.button:hover{filter:brightness(.93)}.note{font-size:12px;color:var(--muted)}footer{margin-top:42px;border-top:1px solid var(--line);padding-top:18px;color:var(--muted);font-size:11px}
+a:focus-visible{outline:3px solid var(--accent);outline-offset:4px}
+@media(prefers-color-scheme:light){:root{color-scheme:light;--bg:#f3f7f6;--card:#fff;--fg:#17272a;--muted:#607477;--line:#dce8e5;--accent:#087f68}main{background:linear-gradient(145deg,#fff,#edf7f4)}.mark{color:#08211c}}
+</style>
+</head>
+<body>
+<main>
+  <div class="brand"><span class="mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M12 2.8 20 7v10l-8 4.2L4 17V7l8-4.2Z"/><path d="M8 9 12 7l4 2v5l-4 2-4-2V9Z"/><path d="m8.3 9.2 3.7 2 3.7-2M12 11.2V16"/></svg></span>VaultGrid</div>
+  <h1>Storage you can trust.</h1>
+  <div class="tagline">Encrypted, replicated, self-healing storage</div>
+  <p class="description">VaultGrid splits files into encrypted blocks and distributes replicas across Data Nodes, with health monitoring and automatic recovery for under-replicated data.</p>
+  <div class="features"><span class="feature">AES-256-GCM encryption</span><span class="feature">Replicated block storage</span><span class="feature">Node health monitoring</span></div>
+  <div class="actions"><a class="button" href="/app">Open VaultGrid dashboard</a><span class="note">Dashboard access requires sign-in.</span></div>
+  <footer>VaultGrid · Encrypted, replicated, self-healing storage</footer>
+</main>
+</body>
+</html>"""
+
 @app.get("/")
-def home(): return render_template_string(PAGE)
+def home(): return render_template_string(LANDING_PAGE)
+
+@app.get("/app")
+def dashboard(): return render_template_string(PAGE)
 
 if __name__ == "__main__":
     threading.Thread(target=monitor, daemon=True).start()
