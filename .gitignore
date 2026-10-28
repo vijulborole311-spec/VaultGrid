@@ -1,0 +1,13 @@
+# User uploads and controller/DataNode state
+data/
+
+# Python environments and generated files
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+
+# Local test and output artifacts
+sample.bin
+out.mhc
+restored.bin
