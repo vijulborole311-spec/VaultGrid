@@ -17,11 +17,9 @@ On controller PC: python namenode.py --datanodes http://192.168.1.11:6001 http:/
 Students use the web dashboard from any browser on the LAN: http://<controller-ip>:5000
 
 ## Deploy on Render
-The repository includes a Render Blueprint in `render.yaml`. In Render, create a new Blueprint
-from this GitHub repository and set `VAULTGRID_AUTH_USERNAME` and `VAULTGRID_AUTH_PASSWORD` as
-private environment variables when prompted. Use unique, strong credentials; never commit them.
-Render serves the app over HTTPS and the controller requires HTTP Basic authentication when
-those variables are configured. The Render start script refuses to start without both values.
+The repository includes a Render Blueprint in `render.yaml`. The dashboard and its API are
+publicly accessible without signing in. Anyone with the URL can view, upload, download, and
+delete stored files, so do not upload private or important data.
 
 The Blueprint uses Render's free web-service plan and does not attach a persistent disk.
 Uploaded files and metadata are temporary and can be lost whenever the service restarts,

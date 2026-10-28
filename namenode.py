@@ -1,7 +1,7 @@
 """Cloud Controller (NameNode): splits files into blocks, encrypts, replicates across DataNodes,
    monitors health, self-heals, serves a web dashboard.
    python namenode.py --datanodes http://192.168.1.11:6001 http://192.168.1.12:6001 ..."""
-import os, json, time, uuid, argparse, threading, io, hmac
+import os, json, time, uuid, argparse, threading, io
 from urllib.parse import urlsplit
 import requests
 from flask import Flask, request, jsonify, send_file, render_template_string, abort
@@ -21,38 +21,17 @@ files = json.load(open(META)) if os.path.exists(META) else {}   # file_id -> met
 alive = {n: False for n in args.datanodes}
 events = []                                                      # recent activity log
 app = Flask(__name__)
-auth_username = os.environ.get("VAULTGRID_AUTH_USERNAME", "")
-auth_password = os.environ.get("VAULTGRID_AUTH_PASSWORD", "")
-auth_required = os.environ.get("VAULTGRID_AUTH_REQUIRED", "").lower() in {"1", "true", "yes"}
-if auth_required and not (auth_username and auth_password):
-    raise RuntimeError("Set VAULTGRID_AUTH_USERNAME and VAULTGRID_AUTH_PASSWORD when authentication is required.")
-if bool(auth_username) != bool(auth_password):
-    raise RuntimeError("Set both VAULTGRID_AUTH_USERNAME and VAULTGRID_AUTH_PASSWORD, or neither.")
 
-if auth_username and auth_password:
-    @app.before_request
-    def require_authentication():
-        if request.path == "/" and request.method == "GET":
-            return None
-        credentials = request.authorization
-        if credentials and credentials.username is not None and credentials.password is not None:
-            username_ok = hmac.compare_digest(credentials.username.encode("utf-8"), auth_username.encode("utf-8"))
-            password_ok = hmac.compare_digest(credentials.password.encode("utf-8"), auth_password.encode("utf-8"))
-            if username_ok and password_ok:
-                origin = request.headers.get("Origin")
-                if request.method in {"POST", "PUT", "PATCH", "DELETE"} and origin and urlsplit(origin).netloc != request.host:
-                    return jsonify(error="Cross-origin request rejected"), 403
-                return None
-        response = jsonify(error="Authentication required")
-        response.status_code = 401
-        response.headers["WWW-Authenticate"] = 'Basic realm="VaultGrid", charset="UTF-8"'
-        response.headers["Cache-Control"] = "no-store"
-        return response
+@app.before_request
+def reject_cross_origin_mutations():
+    origin = request.headers.get("Origin")
+    if request.method in {"POST", "PUT", "PATCH", "DELETE"} and origin and urlsplit(origin).netloc != request.host:
+        return jsonify(error="Cross-origin request rejected"), 403
 
-    @app.after_request
-    def disable_authenticated_response_caching(response):
-        response.headers["Cache-Control"] = "no-store"
-        return response
+@app.after_request
+def disable_response_caching(response):
+    response.headers["Cache-Control"] = "no-store"
+    return response
 
 def log(msg):
     events.insert(0, f"{time.strftime('%H:%M:%S')}  {msg}"); del events[40:]
