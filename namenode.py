@@ -1,7 +1,8 @@
 """Cloud Controller (NameNode): splits files into blocks, encrypts, replicates across DataNodes,
    monitors health, self-heals, serves a web dashboard.
    python namenode.py --datanodes http://192.168.1.11:6001 http://192.168.1.12:6001 ..."""
-import os, json, time, uuid, argparse, threading, io
+import os, json, time, uuid, argparse, threading, io, hmac
+from urllib.parse import urlsplit
 import requests
 from flask import Flask, request, jsonify, send_file, render_template_string, abort
 import crypto_utils as cu
@@ -11,7 +12,7 @@ ap.add_argument("--port", type=int, default=5000)
 ap.add_argument("--datanodes", nargs="+", default=[f"http://127.0.0.1:{p}" for p in (6001, 6002, 6003)])
 ap.add_argument("--block-size", type=int, default=64 * 1024, help="bytes per block")
 ap.add_argument("--replication", type=int, default=2)
-args = ap.parse_args()
+args, _ = ap.parse_known_args()
 
 META = "data/namenode_meta.json"
 os.makedirs("data", exist_ok=True)
@@ -20,6 +21,36 @@ files = json.load(open(META)) if os.path.exists(META) else {}   # file_id -> met
 alive = {n: False for n in args.datanodes}
 events = []                                                      # recent activity log
 app = Flask(__name__)
+auth_username = os.environ.get("VAULTGRID_AUTH_USERNAME", "")
+auth_password = os.environ.get("VAULTGRID_AUTH_PASSWORD", "")
+auth_required = os.environ.get("VAULTGRID_AUTH_REQUIRED", "").lower() in {"1", "true", "yes"}
+if auth_required and not (auth_username and auth_password):
+    raise RuntimeError("Set VAULTGRID_AUTH_USERNAME and VAULTGRID_AUTH_PASSWORD when authentication is required.")
+if bool(auth_username) != bool(auth_password):
+    raise RuntimeError("Set both VAULTGRID_AUTH_USERNAME and VAULTGRID_AUTH_PASSWORD, or neither.")
+
+if auth_username and auth_password:
+    @app.before_request
+    def require_authentication():
+        credentials = request.authorization
+        if credentials and credentials.username is not None and credentials.password is not None:
+            username_ok = hmac.compare_digest(credentials.username.encode("utf-8"), auth_username.encode("utf-8"))
+            password_ok = hmac.compare_digest(credentials.password.encode("utf-8"), auth_password.encode("utf-8"))
+            if username_ok and password_ok:
+                origin = request.headers.get("Origin")
+                if request.method in {"POST", "PUT", "PATCH", "DELETE"} and origin and urlsplit(origin).netloc != request.host:
+                    return jsonify(error="Cross-origin request rejected"), 403
+                return None
+        response = jsonify(error="Authentication required")
+        response.status_code = 401
+        response.headers["WWW-Authenticate"] = 'Basic realm="VaultGrid", charset="UTF-8"'
+        response.headers["Cache-Control"] = "no-store"
+        return response
+
+    @app.after_request
+    def disable_authenticated_response_caching(response):
+        response.headers["Cache-Control"] = "no-store"
+        return response
 
 def log(msg):
     events.insert(0, f"{time.strftime('%H:%M:%S')}  {msg}"); del events[40:]
@@ -88,7 +119,7 @@ def fetch_block(b):
         except Exception: pass
     return None
 
-@app.get("/api/download/<fid>")
+@app.route("/api/download/<fid>", methods=["GET", "POST"])
 def download(fid):
     meta = files.get(fid) or abort(404)
     blobs = []
@@ -96,7 +127,7 @@ def download(fid):
         d = fetch_block(b)
         if d is None: return jsonify(error=f"block {b['id']} unavailable"), 503
         blobs.append(d)
-    pw = request.args.get("password")
+    pw = request.form.get("password") if request.method == "POST" else request.args.get("password")
     if pw:   # optional: server-side decrypt
         key = cu.derive_key(pw, bytes.fromhex(meta["salt"]))
         try: plain = b"".join(cu.decrypt_block(key, b["id"], d) for b, d in zip(meta["blocks"], blobs))
@@ -132,3 +163,5 @@ def home(): return render_template_string(PAGE)
 if __name__ == "__main__":
     threading.Thread(target=monitor, daemon=True).start()
     app.run(host="0.0.0.0", port=args.port, threaded=True)
+else:
+    threading.Thread(target=monitor, daemon=True).start()

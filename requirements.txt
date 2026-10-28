@@ -1,3 +1,4 @@
 flask
 requests
 cryptography
+gunicorn; sys_platform != "win32"

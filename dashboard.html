@@ -554,8 +554,10 @@ footer{border-top:1px solid var(--line);padding:16px 0;color:var(--muted);font-s
     }
     try {
       let url = `/api/download/${encodeURIComponent(file.id)}`;
-      if (decrypt) url += `?${new URLSearchParams({ password }).toString()}`;
-      const response = await fetch(url);
+      const requestOptions = decrypt
+        ? { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8" }, body: new URLSearchParams({ password }).toString() }
+        : { method: "GET" };
+      const response = await fetch(url, requestOptions);
       password = "";
       if (!response.ok) {
         let message = `Download failed (HTTP ${response.status}).`;
