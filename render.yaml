@@ -2,13 +2,9 @@ services:
   - type: web
     name: vaultgrid
     runtime: python
-    plan: starter
+    plan: free
     buildCommand: pip install -r requirements.txt
     startCommand: bash render_start.sh
-    disk:
-      name: vaultgrid-data
-      mountPath: /opt/render/project/src/data
-      sizeGB: 1
     envVars:
       - key: VAULTGRID_AUTH_USERNAME
         sync: false

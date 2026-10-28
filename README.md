@@ -23,11 +23,13 @@ private environment variables when prompted. Use unique, strong credentials; nev
 Render serves the app over HTTPS and the controller requires HTTP Basic authentication when
 those variables are configured. The Render start script refuses to start without both values.
 
-The Blueprint uses a paid Starter web service and a 1 GB persistent disk mounted at `data/`.
-Check Render's current pricing before deploying. It starts the controller and three DataNodes
-inside one service, so this is a persistent demo rather than independent-node redundancy.
-The dashboard submits decrypt passwords in a POST body. Older clients may still use the
-legacy GET query parameter, which should not be used for public deployments.
+The Blueprint uses Render's free web-service plan and does not attach a persistent disk.
+Uploaded files and metadata are temporary and can be lost whenever the service restarts,
+sleeps, or redeploys; use disposable test files only. It starts the controller and three
+DataNodes inside one service, so replicas are not independent-node redundancy. For persistent
+storage, use a paid instance with a persistent disk and check Render's current pricing. The
+dashboard submits decrypt passwords in a POST body. Older clients may still use the legacy GET
+query parameter, which should not be used for public deployments.
 
 ## CLI
     python client.py upload report.pdf mypassword
