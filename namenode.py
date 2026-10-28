@@ -17,6 +17,7 @@ args, _ = ap.parse_known_args()
 META = "data/namenode_meta.json"
 os.makedirs("data", exist_ok=True)
 lock = threading.Lock()
+health_lock = threading.Lock()
 files = json.load(open(META)) if os.path.exists(META) else {}   # file_id -> metadata
 alive = {n: False for n in args.datanodes}
 events = []                                                      # recent activity log
@@ -38,7 +39,21 @@ def log(msg):
 
 def save(): json.dump(files, open(META, "w"))
 
-def live_nodes(): return [n for n, a in alive.items() if a]
+def live_nodes():
+    with health_lock:
+        return [node for node, is_alive in alive.items() if is_alive]
+
+def refresh_node_health():
+    for node in args.datanodes:
+        try:
+            is_alive = requests.get(node + "/health", timeout=1).ok
+        except requests.RequestException:
+            is_alive = False
+        with health_lock:
+            was_alive = alive[node]
+            alive[node] = is_alive
+        if was_alive != is_alive:
+            log(f"DataNode {node} is now {'ONLINE' if is_alive else 'OFFLINE'}")
 
 def load_of(n): return sum(n in b["replicas"] for f in files.values() for b in f["blocks"])
 
@@ -49,11 +64,7 @@ def pick_nodes(k, exclude=(), extra=None):
 def monitor():
     """Heartbeat + self-healing (re-replication of under-replicated blocks)."""
     while True:
-        for n in args.datanodes:
-            was = alive[n]
-            try: alive[n] = requests.get(n + "/health", timeout=1).ok
-            except Exception: alive[n] = False
-            if was != alive[n]: log(f"DataNode {n} is now {'ONLINE' if alive[n] else 'OFFLINE'}")
+        refresh_node_health()
         with lock:
             for f in files.values():
                 for b in f["blocks"]:
@@ -74,6 +85,7 @@ def monitor():
 def upload():
     f, pw = request.files.get("file"), request.form.get("password", "")
     if not f or not pw: return jsonify(error="file and password required"), 400
+    refresh_node_health()
     if len(live_nodes()) < 1: return jsonify(error="no DataNodes online"), 503
     raw = f.read(); salt = os.urandom(16); key = cu.derive_key(pw, salt)
     fid, blocks, pending = uuid.uuid4().hex[:8], [], {}
@@ -131,6 +143,7 @@ def delete(fid):
 
 @app.get("/api/status")
 def status():
+    refresh_node_health()
     return jsonify(replication=args.replication, block_size=args.block_size, events=events,
         nodes=[dict(url=n, alive=alive[n], blocks=load_of(n)) for n in args.datanodes],
         files=[dict(id=k, name=v["name"], size=v["size"], blocks=[dict(id=b["id"],
